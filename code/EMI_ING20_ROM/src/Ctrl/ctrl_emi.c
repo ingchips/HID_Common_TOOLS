@@ -15,7 +15,7 @@
 #include "peripheral_timer.h"
 #include "TEST_emi.h"
 
-#if 1
+#if 0
 #define LOG_ERR platform_printf
 #define LOG_INFO platform_printf
 #define LOG_DEBUG platform_printf
