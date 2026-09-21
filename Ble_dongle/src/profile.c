@@ -45,6 +45,10 @@ struct gatt_client_discoverer *discoverer = NULL;
 uint16_t mas_conn_handle = INVALID_HANDLE;
 
 #define USER_MSG_NOTIFY_ENABLE              1
+#define AD_TYPE_APPEARANCE                  0x19
+#define APPEARANCE_KEYBOARD                 0x03C1
+#define APPEARANCE_MOUSE                    0x03C2
+#define BLE_MOUSE_REPORT_SIZE               7
 
 //static SemaphoreHandle_t sem_led_ctl = NULL;
 
@@ -91,48 +95,6 @@ static const scan_phy_config_t configs[2] =
 };
 
 
-//static uint8_t target_adv_data[31] = {
-//    // 0x01 - «Flags»
-//    2, 0x01,
-//    0x06, 
-
-//    // 0x03 - «Complete List of 16-bit Service Class UUIDs»
-//    3, 0x03,
-//    0x12, 0x18, 
-
-//    // 0x19 - «Appearance»
-//    3, 0x19,
-//    0xC1, 0x03, 
-
-//    // 0x09 - «Complete Local Name»
-//    7, 0x09,
-//    87, 97, 118, 101, 55, 53,
-
-//    // Total size = 18 bytes
-//};
-
-static uint8_t target_adv_data[31] = {
-    // 0x01 - «Flags»
-    2, 0x01,
-    0x06, 
-
-    // 0xFF - «Manufacturer data»
-    6, 0xFF, 
-    0x06, 0x00, 0x03, 0x00, 0x80,
-    // , 87, 97, 118,
-    // 101, 55, 53,
-
-    // 0x19 - «Appearance»
-    3, 0x19,
-    0xC1, 0x03,
-
-    // 0x09 - «Complete Local Name»
-    7, 0x08,
-    87, 97, 118, 101, 55, 53,
-    // Total size = 22 bytes
-};
-
-
 typedef struct slave_info
 {
     uint32_t    s2m_total;
@@ -140,10 +102,13 @@ typedef struct slave_info
     gatt_client_service_t                   service_tpt;
     gatt_client_characteristic_t            basic_char;
     gatt_client_characteristic_t            extend_char;
+    gatt_client_characteristic_t            mouse_char;
     gatt_client_characteristic_descriptor_t basic_desc;
     gatt_client_characteristic_descriptor_t extend_desc;
+    gatt_client_characteristic_descriptor_t mouse_desc;
     gatt_client_notification_t              output_basic_notify;
     gatt_client_notification_t              output_extend_notify;
+    gatt_client_notification_t              output_mouse_notify;
     uint16_t    conn_handle;
 } slave_info_t;
 
@@ -162,6 +127,9 @@ static void user_msg_handler(uint32_t msg_id, void *data, uint16_t size)
             (uint8_t *)&char_config_notification);
         gatt_client_write_characteristic_descriptor_using_descriptor_handle(btstack_callback, slave.conn_handle,
             slave.extend_desc.handle, sizeof(char_config_notification),
+            (uint8_t *)&char_config_notification);
+        gatt_client_write_characteristic_descriptor_using_descriptor_handle(btstack_callback, slave.conn_handle,
+            slave.mouse_desc.handle, sizeof(char_config_notification),
             (uint8_t *)&char_config_notification);
         break;
     default:
@@ -205,12 +173,36 @@ static void extend_output_notification_handler(uint8_t packet_type, uint16_t _, 
     }
 }
 
+static void mouse_output_notification_handler(uint8_t packet_type, uint16_t _, const uint8_t *packet, uint16_t size)
+{
+    const gatt_event_value_packet_t *value_packet;
+    uint16_t value_size;
+    switch (packet[0])
+    {
+    case GATT_EVENT_NOTIFICATION:
+        value_packet = gatt_event_notification_parse(packet, size, &value_size);
+        if (value_size < BLE_MOUSE_REPORT_SIZE)
+        {
+            log_printf("[BLE]:mouse report too short:%d", value_size);
+            break;
+        }
+        if (USB_HID_ERROR_NONE != bsp_usb_hid_report_send(MOUSE_REPORT_ID,
+            (uint8_t *)value_packet->value, BLE_MOUSE_REPORT_SIZE))
+        {
+            log_printf("[USB]:mouse send fail");
+        }
+        break;
+    }
+}
+
 static void output_notify_char_init(void)
 {
     slave.basic_char.value_handle = 29;
     slave.extend_char.value_handle = 45;
+    slave.mouse_char.value_handle = 33;
     slave.basic_desc.handle = 30;
     slave.extend_desc.handle = 46;
+    slave.mouse_desc.handle = 34;
 }
 void service_discovery_callback(uint8_t packet_type, uint16_t _, const uint8_t *packet, uint16_t size)
 {
@@ -233,6 +225,8 @@ void service_discovery_callback(uint8_t packet_type, uint16_t _, const uint8_t *
                                                                 slave.conn_handle, slave.basic_char.value_handle);
             gatt_client_listen_for_characteristic_value_updates(&slave.output_extend_notify, extend_output_notification_handler,
                                                                 slave.conn_handle, slave.extend_char.value_handle);
+            gatt_client_listen_for_characteristic_value_updates(&slave.output_mouse_notify, mouse_output_notification_handler,
+                                                                slave.conn_handle, slave.mouse_char.value_handle);
             sm_request_pairing(slave.conn_handle);
             Ble_State = KB_BLE_STATE_COMMUNICATING;
 
@@ -248,19 +242,17 @@ void service_discovery_callback(uint8_t packet_type, uint16_t _, const uint8_t *
 
 uint8_t adv_finded(const uint8_t len, const uint8_t *data)
 {
-    if(len < ADV_CMP_LENGTH)
-    {
-        return 0;
-    }
+    uint16_t appearance_len = 0;
+    const uint8_t *appearance = ad_data_from_type(len, (uint8_t *)data,
+                                                  AD_TYPE_APPEARANCE, &appearance_len);
+    uint16_t appearance_value;
 
-    if (memcmp(target_adv_data, data, ADV_CMP_LENGTH) == 0)
-    {    
-        return 1;
-    }
-    else
-    {
+    if (appearance == NULL || appearance_len < sizeof(uint16_t))
         return 0;
-    }
+
+    appearance_value = little_endian_read_16(appearance, 0);
+
+    return appearance_value == APPEARANCE_KEYBOARD || appearance_value == APPEARANCE_MOUSE;
 }
 
 static initiating_phy_config_t phy_configs[] =

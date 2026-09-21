@@ -381,7 +381,7 @@ typedef struct __attribute__((packed))
 #define KB_REPORT_SIZE     	(59)
 #define SYS_REPORT_SIZE   	(25)
 #define CON_REPORT_SIZE   	(25)
-#define MOUSE_REPORT_SIZE	(73)
+#define MOUSE_REPORT_SIZE	(75)
 #define IAP_REPORT_SIZE		(29)
 
 #define USB_HID_CTL_REPORT_DESCRIPTOR_SIZE (KB_REPORT_SIZE + SYS_REPORT_SIZE + CON_REPORT_SIZE + MOUSE_REPORT_SIZE + IAP_REPORT_SIZE)
@@ -407,10 +407,10 @@ typedef struct __attribute__((packed))
 			HID_UsagePage(HID_USAGE_PAGE_GENERIC),              \
 			HID_Usage(HID_USAGE_GENERIC_X),                     \
 			HID_Usage(HID_USAGE_GENERIC_Y),                     \
-			HID_LogicalMin(0X81),                             	\
-			HID_LogicalMax(0X7F),                             	\
+			HID_LogicalMinS(0x8000),                            \
+			HID_LogicalMaxS(0x7FFF),                            \
 			HID_ReportCount(2),                                 \
-			HID_ReportSize(8),                                  \
+			HID_ReportSize(16),                                 \
 			HID_Input(HID_Data|HID_Variable|HID_Relative),      \
                                                                 \
 			/*第 4 字节修饰鼠标滚轮*/                           \
@@ -559,7 +559,7 @@ typedef struct
 #define KEY_BIT_TABLE_LEN	(31)
 #define KEY_SYS_TABLE_LEN	(2)
 #define KEY_CON_TABLE_LEN	(2)
-#define KEY_MOU_TABLE_LEN	(5)
+#define KEY_MOU_TABLE_LEN	(8)
 
 typedef struct
 {

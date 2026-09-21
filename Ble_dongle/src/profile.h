@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#define ADV_CMP_LENGTH  14
-
 #define RELEASE_VER             0
 
 #define RSSI_THRESHOLD          -30
